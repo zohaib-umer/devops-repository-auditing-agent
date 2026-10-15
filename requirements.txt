@@ -1,0 +1,2 @@
+# Runtime uses Python 3.11+ standard library and the Git executable.
+# No third-party runtime dependencies or agent frameworks.
