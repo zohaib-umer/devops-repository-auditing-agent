@@ -10,7 +10,7 @@ from auditor.provider import LLMClient, NoRedirect
 
 class ProviderTests(unittest.TestCase):
     def client(self):
-        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-placeholder",
+        with patch.dict(os.environ, {"LLM_PROVIDER": "openai", "OPENAI_API_KEY": "test-placeholder",
                                      "OPENAI_BASE_URL": "https://api.example.invalid/v1"}):
             return LLMClient()
 
@@ -70,9 +70,32 @@ class ProviderTests(unittest.TestCase):
 
     def test_insecure_endpoint_rejected(self):
         for url in ["http://api.example.invalid", "https://user:pass@api.example.invalid", "https://api.example.invalid?x=1"]:
-            with patch.dict(os.environ, {"OPENAI_API_KEY": "test", "OPENAI_BASE_URL": url}):
+            with patch.dict(os.environ, {"LLM_PROVIDER": "openai", "OPENAI_API_KEY": "test", "OPENAI_BASE_URL": url}):
                 with self.assertRaises(ValueError):
                     LLMClient()
+
+    def test_ollama_native_tool_response(self):
+        with patch.dict(os.environ, {"LLM_PROVIDER": "ollama", "OLLAMA_BASE_URL": "http://127.0.0.1:11434"}):
+            client = LLMClient()
+        client.opener = Mock()
+        client.opener.open.return_value = io.BytesIO(json.dumps({"message": {
+            "role": "assistant", "tool_calls": [{"function": {
+                "name": "read_file", "arguments": {"path": "README.md"}}}]}}).encode())
+        history = [{"role": "assistant", "content": None, "tool_calls": [{"function": {
+            "name": "list_files", "arguments": "{}"}}]}]
+        response = client.complete(history, [])
+        self.assertEqual(json.loads(response["tool_calls"][0]["function"]["arguments"]), {"path": "README.md"})
+        request = client.opener.open.call_args.args[0]
+        self.assertEqual(request.full_url, "http://127.0.0.1:11434/api/chat")
+        self.assertIsNone(request.get_header("Authorization"))
+        self.assertNotIn("tool_choice", json.loads(request.data))
+        self.assertEqual(json.loads(request.data)["messages"][0]["tool_calls"][0]["function"]["arguments"], {})
+        self.assertEqual(history[0]["tool_calls"][0]["function"]["arguments"], "{}")
+
+    def test_ollama_remote_http_rejected(self):
+        with patch.dict(os.environ, {"LLM_PROVIDER": "ollama", "OLLAMA_BASE_URL": "http://example.com:11434"}):
+            with self.assertRaises(ValueError):
+                LLMClient()
 
 
 if __name__ == "__main__":

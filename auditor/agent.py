@@ -54,6 +54,10 @@ class AuditAgent:
             message = self.client.complete(messages, TOOLS)
             calls = message.get("tool_calls")
             if not isinstance(calls, list) or len(calls) != 1:
+                if getattr(self.client, "provider", None) == "ollama":
+                    messages.append({"role": "user", "content": "Select exactly ONE function tool now. Do not answer in prose or call multiple tools. Finish only through finish_audit."})
+                    self.trace.append({"step": step + 1, "tool": "protocol_retry", "result": "Requested exactly one tool call"})
+                    continue
                 raise RuntimeError("Provider must return exactly one tool call per turn")
             call = calls[0]
             try:

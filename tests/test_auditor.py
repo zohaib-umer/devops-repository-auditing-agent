@@ -180,7 +180,7 @@ class InterfaceTests(unittest.TestCase):
                 repository_url(url)
 
     def test_missing_credentials_and_failure_no_report(self):
-        with patch.dict(os.environ, {}, clear=True), tempfile.TemporaryDirectory() as directory:
+        with patch.dict(os.environ, {"LLM_PROVIDER": "openai"}, clear=True), tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(ValueError):
                 LLMClient()
             output = Path(directory) / "report.json"
