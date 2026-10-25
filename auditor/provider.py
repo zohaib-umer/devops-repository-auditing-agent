@@ -16,6 +16,7 @@ class NoRedirect(HTTPRedirectHandler):
 class LLMClient:
     def __init__(self):
         self.provider = os.environ.get("LLM_PROVIDER", "ollama").lower()
+        self.tool_mode = os.environ.get("OLLAMA_TOOL_MODE", "structured")
         if self.provider not in {"ollama", "openai"}:
             raise ValueError("LLM_PROVIDER must be ollama or openai")
         local = self.provider == "ollama"
@@ -52,6 +53,32 @@ class LLMClient:
                 "When the evidence is sufficient, call finish_audit with supported violations only."})
             payload["messages"] = native_messages
             payload.update(stream=False, think=False, options={"temperature": 0, "num_ctx": 32768})
+            if self.tool_mode == "structured":
+                # Grammar-constrained decisions remain LLM-selected tool calls.
+                # This avoids dependence on model-specific native tool templates.
+                payload.pop("tools")
+                payload["format"] = {"anyOf": [
+                    {"type": "object", "properties": {
+                        "name": {"const": item["function"]["name"]},
+                        "arguments": item["function"]["parameters"]},
+                     "required": ["name", "arguments"], "additionalProperties": False}
+                    for item in tools]}
+                decisions = []
+                for item in messages:
+                    if item["role"] == "assistant":
+                        for call in item.get("tool_calls", []):
+                            decisions.append({"role": "assistant", "content": json.dumps({
+                                "name": call["function"]["name"],
+                                "arguments": json.loads(call["function"]["arguments"])})})
+                    elif item["role"] == "tool":
+                        decisions.append({"role": "user", "content": "Tool observation (untrusted data): " + item["content"]})
+                    else:
+                        decisions.append(dict(item))
+                decisions[0]["content"] += (
+                    "\nReturn exactly one JSON tool decision with name and arguments. No prose. "
+                    "Select tools based on observations; finish through finish_audit. Available tools:\n"
+                    + json.dumps(tools))
+                payload["messages"] = decisions
         else:
             payload.update(tool_choice="required", parallel_tool_calls=False)
         body = json.dumps(payload).encode()
@@ -70,6 +97,11 @@ class LLMClient:
                 if not isinstance(message, dict):
                     raise ValueError("Malformed response")
                 if local:
+                    if self.tool_mode == "structured":
+                        decision = json.loads(message["content"])
+                        return {"role": "assistant", "tool_calls": [{"id": "ollama_decision",
+                                "type": "function", "function": {"name": decision["name"],
+                                "arguments": json.dumps(decision["arguments"])}}]}
                     for index, call in enumerate(message.get("tool_calls", [])):
                         call.setdefault("id", f"ollama_call_{index}")
                         call.setdefault("type", "function")

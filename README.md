@@ -1,5 +1,7 @@
 # DevOps Repository Auditing Agent
 
+[![Validate auditor](https://github.com/zohaib-umer/devops-repository-auditing-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/zohaib-umer/devops-repository-auditing-agent/actions/workflows/ci.yml)
+
 A Python AI agent that investigates public GitHub repositories, identifies evidence-backed DevOps defects, and produces actionable JSON reports. **Runs locally with Ollama; no paid API key is required.**
 
 The LLM chooses inspection tools and follow-up calls. Python handles dispatch, input validation, safe repository access and report validation. No prebuilt agent or orchestration framework is used.
@@ -50,6 +52,7 @@ The agent runs unattended. Local CPU inference can take several minutes. The Pyt
 | `LLM_PROVIDER` | `ollama` | `ollama` for the native local API, or `openai` for compatible hosted services |
 | `OLLAMA_MODEL` | `llama3.2:3b` | Installed model supporting function calls |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Local Ollama service |
+| `OLLAMA_TOOL_MODE` | `structured` | Schema-constrained JSON tool decisions; `native` optionally uses model-specific tool templates |
 | `OPENAI_API_KEY` | unset | Required only with the hosted provider |
 | `OPENAI_MODEL` | `gpt-4.1-mini` | Hosted provider model identifier |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Hosted API root |
@@ -84,7 +87,7 @@ finish_audit -> schema and evidence validation
 Atomic JSON output + optional trace
 ```
 
-The agent implements Observe → Reason → Select Tool → Execute Tool → Interpret Results → Report. Tool order and arguments are chosen dynamically by the LLM, not by a fixed checklist. Before finishing, it must have inspected the tree, read a file and examined commit history. Invalid line evidence is returned to the model for correction. Ollama replies without exactly one tool call receive protocol feedback within the same bounded loop.
+The agent implements Observe → Reason → Select Tool → Execute Tool → Interpret Results → Report. Tool order and arguments are chosen dynamically by the LLM, not by a fixed checklist. Before finishing, it must have inspected the tree, read a file and examined commit history. Invalid line evidence is returned to the model for correction. By default Ollama uses a JSON schema containing all tool names and their argument contracts to constrain each decision. The model chooses the tool; Python dispatches it and returns observations for the next decision. Native function-call mode is also available. This avoids depending on small models' native tool templates while preserving genuine LLM-directed investigation.
 
 ## Inspection tools
 
@@ -184,7 +187,7 @@ python agent.py --repo https://github.com/octocat/Hello-World --output sample_re
 
 The sample trace records the exact target commit and actual tool sequence. A minimal demonstration repository can legitimately yield no findings; its absence of a production CI pipeline is not automatically a defect. Do not invent findings to make the example look more impressive.
 
-Local verification on October 25, 2026: 29 automated tests passed and Ruff passed. Source/wheel package builds were previously verified before the Ollama integration. Live Ollama sample status is recorded below after the run completes.
+Verification on October 25, 2026: 29 automated tests passed, Ruff passed, and source/wheel package builds succeeded with the Ollama integration. GitHub CI also passed on Linux and Windows with Python 3.11 and 3.13. Live Ollama sample status is recorded below after the run completes.
 
 For broader evaluation, use public repositories with independently documented obvious defects, subtle CI/security defects and healthy alternatives. Calculate precision as true positives divided by reported findings and recall as true positives divided by known defects. Treat undefined ratios as N/A. No hidden-test scores or unmeasured accuracy claims are made.
 
@@ -198,6 +201,15 @@ For broader evaluation, use public repositories with independently documented ob
 - Hosted authentication failure: configure the hosted key/model only when `LLM_PROVIDER=openai`.
 
 ## Assignment submission
+
+Public repository: https://github.com/zohaib-umer/devops-repository-auditing-agent
+
+To download, use GitHub's **Code → Download ZIP**, or clone:
+
+```sh
+git clone https://github.com/zohaib-umer/devops-repository-auditing-agent.git
+cd devops-repository-auditing-agent
+```
 
 Submit **only this public GitHub repository URL** through the course submission channel. All setup, architecture, execution and related project information belongs in this README. Required deliverables are `agent.py`, `tools.py`, agent modules, dependencies/configuration, tests and authentic `sample_report.json`. The public repository and successful live sample must be present before submission.
 

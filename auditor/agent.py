@@ -1,6 +1,7 @@
 """Observe -> reason -> select -> execute -> interpret -> report."""
 
 import json
+import sys
 
 from auditor.schema import TOOLS, validate_report
 
@@ -68,6 +69,8 @@ class AuditAgent:
                     raise ValueError("Arguments must be an object")
             except (KeyError, TypeError, ValueError):
                 raise RuntimeError("Provider returned malformed tool arguments") from None
+            if name in {item["function"]["name"] for item in TOOLS}:
+                print(f"Inspection step {step + 1}: {name}", file=sys.stderr, flush=True)
             # Keep protocol fields only; do not persist provider reasoning text.
             messages.append({"role": "assistant", "content": None, "tool_calls": [call]})
             if name == "finish_audit":

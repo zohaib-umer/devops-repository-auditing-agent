@@ -75,7 +75,7 @@ class ProviderTests(unittest.TestCase):
                     LLMClient()
 
     def test_ollama_native_tool_response(self):
-        with patch.dict(os.environ, {"LLM_PROVIDER": "ollama", "OLLAMA_BASE_URL": "http://127.0.0.1:11434"}):
+        with patch.dict(os.environ, {"LLM_PROVIDER": "ollama", "OLLAMA_TOOL_MODE": "native", "OLLAMA_BASE_URL": "http://127.0.0.1:11434"}):
             client = LLMClient()
         client.opener = Mock()
         client.opener.open.return_value = io.BytesIO(json.dumps({"message": {
@@ -96,6 +96,21 @@ class ProviderTests(unittest.TestCase):
         with patch.dict(os.environ, {"LLM_PROVIDER": "ollama", "OLLAMA_BASE_URL": "http://example.com:11434"}):
             with self.assertRaises(ValueError):
                 LLMClient()
+
+    def test_ollama_structured_decision(self):
+        from auditor.schema import TOOLS
+        with patch.dict(os.environ, {"LLM_PROVIDER": "ollama", "OLLAMA_TOOL_MODE": "structured",
+                                     "OLLAMA_BASE_URL": "http://127.0.0.1:11434"}):
+            client = LLMClient()
+        client.opener = Mock()
+        client.opener.open.return_value = io.BytesIO(json.dumps({"message": {
+            "content": json.dumps({"name": "list_files", "arguments": {}})}}).encode())
+        result = client.complete([{"role": "system", "content": "Audit carefully"},
+                                  {"role": "user", "content": "Audit the repository"}], TOOLS)
+        self.assertEqual(result["tool_calls"][0]["function"]["name"], "list_files")
+        payload = json.loads(client.opener.open.call_args.args[0].data)
+        self.assertNotIn("tools", payload)
+        self.assertEqual(len(payload["format"]["anyOf"]), len(TOOLS))
 
 
 if __name__ == "__main__":
