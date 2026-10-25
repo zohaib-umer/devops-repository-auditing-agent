@@ -200,35 +200,6 @@ For broader evaluation, use public repositories with independently documented ob
 - Git operation failed: verify public repository access, Git installation and network access.
 - Hosted authentication failure: configure the hosted key/model only when `LLM_PROVIDER=openai`.
 
-## Assignment submission
-
-Public repository: https://github.com/zohaib-umer/devops-repository-auditing-agent
-
-To download, use GitHub's **Code → Download ZIP**, or clone:
-
-```sh
-git clone https://github.com/zohaib-umer/devops-repository-auditing-agent.git
-cd devops-repository-auditing-agent
-```
-
-Submit **only this public GitHub repository URL** through the course submission channel. All setup, architecture, execution and related project information is included in this README.
-
-| Assignment deliverable | Included |
-| --- | --- |
-| Public GitHub repository | This repository |
-| Required CLI | `agent.py --repo <url> --output report.json` |
-| Four required inspection tools | `tools.py` |
-| Explicit LLM-directed agent loop | `auditor/agent.py` |
-| Local LLM execution | Ollama integration, verified with `llama3.2:3b` |
-| Dependencies and configuration | `requirements.txt`, `pyproject.toml`, `.env.example` |
-| Setup, architecture and execution documentation | This README |
-| Automated tests | `tests/`, 30 passing tests |
-| Authentic example output | `sample_report.json` |
-| Inspectable tool-call evidence | `sample_trace.json` |
-| CI and meaningful commit history | GitHub Actions and repository commits |
-
-The required implementation and submission artifacts are complete. Hidden-repository grading remains the instructor's independent evaluation.
-
 ## Contribution and review
 
 Use focused commits and pull requests explaining the change and validation. Review evidence grounding, safe tool boundaries, prompt-injection handling and redaction carefully. Add regression tests for new behavior and preserve the required CLI/JSON contract. Never commit real credentials.
