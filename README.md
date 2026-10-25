@@ -187,7 +187,9 @@ python agent.py --repo https://github.com/octocat/Hello-World --output sample_re
 
 The sample trace records the exact target commit and actual tool sequence. A minimal demonstration repository can legitimately yield no findings; its absence of a production CI pipeline is not automatically a defect. Do not invent findings to make the example look more impressive.
 
-Verification on October 25, 2026: 29 automated tests passed, Ruff passed, and source/wheel package builds succeeded with the Ollama integration. GitHub CI also passed on Linux and Windows with Python 3.11 and 3.13. Live Ollama sample status is recorded below after the run completes.
+Verification on October 25, 2026: **30 automated tests passed**, Ruff passed, and source/wheel package builds succeeded. GitHub CI passed on Linux and Windows with Python 3.11 and 3.13.
+
+**Live Ollama run completed successfully:** `llama3.2:3b` audited `octocat/Hello-World` at commit `7fd1a60b01f91b314f59955a4e4d4e80d8edf11d`, using the auditor implementation at commit `85a8c63`. The committed `sample_report.json` is the authentic output, with an empty violations array. `sample_trace.json` records all 15 decisions, including rejected unsupported candidate claims and subsequent inspection. Rejected candidates in the trace are model proposals, not accepted findings. This sample demonstrates actual local inference, dynamic tool calls, correction feedback and valid JSON output; it is not a broad accuracy benchmark.
 
 For broader evaluation, use public repositories with independently documented obvious defects, subtle CI/security defects and healthy alternatives. Calculate precision as true positives divided by reported findings and recall as true positives divided by known defects. Treat undefined ratios as N/A. No hidden-test scores or unmeasured accuracy claims are made.
 
@@ -211,7 +213,23 @@ git clone https://github.com/zohaib-umer/devops-repository-auditing-agent.git
 cd devops-repository-auditing-agent
 ```
 
-Submit **only this public GitHub repository URL** through the course submission channel. All setup, architecture, execution and related project information belongs in this README. Required deliverables are `agent.py`, `tools.py`, agent modules, dependencies/configuration, tests and authentic `sample_report.json`. The public repository and successful live sample must be present before submission.
+Submit **only this public GitHub repository URL** through the course submission channel. All setup, architecture, execution and related project information is included in this README.
+
+| Assignment deliverable | Included |
+| --- | --- |
+| Public GitHub repository | This repository |
+| Required CLI | `agent.py --repo <url> --output report.json` |
+| Four required inspection tools | `tools.py` |
+| Explicit LLM-directed agent loop | `auditor/agent.py` |
+| Local LLM execution | Ollama integration, verified with `llama3.2:3b` |
+| Dependencies and configuration | `requirements.txt`, `pyproject.toml`, `.env.example` |
+| Setup, architecture and execution documentation | This README |
+| Automated tests | `tests/`, 30 passing tests |
+| Authentic example output | `sample_report.json` |
+| Inspectable tool-call evidence | `sample_trace.json` |
+| CI and meaningful commit history | GitHub Actions and repository commits |
+
+The required implementation and submission artifacts are complete. Hidden-repository grading remains the instructor's independent evaluation.
 
 ## Contribution and review
 
