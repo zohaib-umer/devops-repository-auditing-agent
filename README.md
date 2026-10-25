@@ -1,142 +1,167 @@
 # DevOps Repository Auditing Agent
 
-An explicit Python agent that lets an LLM investigate a public GitHub repository, select read-only tools, follow evidence, and return an actionable JSON audit. It uses no LangChain, LangGraph, n8n, or other agent framework.
+A Python AI agent that investigates public GitHub repositories, identifies evidence-backed DevOps defects, and produces actionable JSON reports. **Runs locally with Ollama; no paid API key is required.**
 
-## Project status
+The LLM chooses inspection tools and follow-up calls. Python handles dispatch, input validation, safe repository access and report validation. No prebuilt agent or orchestration framework is used.
 
-The implementation has passed 27 automated tests, Ruff lint, and source/wheel package builds locally on Windows using Python 3.12. Read-only clone, file discovery, file reads and commit-history inspection were also verified against `octocat/Hello-World` at commit `7fd1a60b01f91b314f59955a4e4d4e80d8edf11d` on October 15, 2026. The GitHub CI matrix is configured but has not yet run remotely.
+## Quick start
 
-A live LLM audit and public GitHub publication require configured credentials. **A genuine `sample_report.json` has not yet been generated.** Scripted test responses are test doubles, not a substitute for a real sample or evidence of model accuracy. Before submission, complete the live sample and publishing steps below.
-
-## Prerequisites and installation
-
-- Python 3.11 or newer.
-- Git on PATH (check `git --version`).
-- Internet access to GitHub and an OpenAI-compatible HTTPS API supporting Chat Completions function calls.
-- An API key and an accessible model. The default model identifier is `gpt-4.1-mini`; set `OPENAI_MODEL` for your account/provider.
-
-After cloning this repository, open its folder and run:
+Requirements: Python 3.11+, Git, and [Ollama](https://ollama.com/download). Install Ollama, then open a terminal in this repository:
 
 ```sh
+ollama pull llama3.2:3b
 python -m venv .venv
 ```
 
-Activate on Windows PowerShell:
+Activate the environment on Windows PowerShell:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-$env:OPENAI_API_KEY = '<your API key>'
-$env:OPENAI_MODEL = 'gpt-4.1-mini'
 ```
 
-Activate on macOS/Linux:
+Or on macOS/Linux:
 
 ```sh
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-export OPENAI_API_KEY='<your API key>'
-export OPENAI_MODEL='gpt-4.1-mini'
 ```
 
-The runtime has zero third-party Python dependencies. `requirements.txt` documents that choice. Optional editable installation: `python -m pip install -e .` provides the `devops-audit` command. `.env.example` documents variables; `.env` is intentionally not loaded. Export variables in the shell that launches Python. Never commit real keys.
-
-For another compatible provider, set `OPENAI_BASE_URL` to its HTTPS API root (normally ending in `/v1`) and use that provider's model identifier and API key. Repository content is sent to this selected endpoint after best-effort redaction. Do not use a provider you do not trust.
-
-## Required execution interface
+Ensure Ollama is running. If its desktop app is not running, start `ollama serve` in another terminal. Then execute the required interface:
 
 ```sh
-python agent.py --repo https://github.com/pallets/flask --output report.json
+python agent.py --repo https://github.com/octocat/Hello-World --output report.json
 ```
 
-For provenance and review of dynamic tool selection:
+Include the investigation trace with:
 
 ```sh
-python agent.py --repo https://github.com/pallets/flask --output report.json --trace trace.json --max-steps 60
+python agent.py --repo https://github.com/octocat/Hello-World --output report.json --trace trace.json --max-steps 60
 ```
 
-No interactive prompts occur. Exit code 0 means a completed, validated report, including an empty violations array when appropriate. Exit code 1 means a fatal failure; argument syntax errors use argparse's exit code 2. On failure no new report is written; an existing report at the same path is preserved, so always check the exit code before consuming it. Trace files identify incomplete audits with `completed: false` where the loop started. CLI progress/errors go to stderr.
+The agent runs unattended. Local CPU inference can take several minutes. The Python runtime uses only the standard library; `requirements.txt` documents this. Optional installation using `python -m pip install -e .` also provides the `devops-audit` command.
 
-The default 60-call budget can be set from 4 to 150. Each LLM request times out after 60 seconds and transient HTTP/network failures receive at most two retries. Git clone times out at 120 seconds; individual inspection commands time out at 30 seconds. An audit may take several minutes and incur provider charges; cost depends on inspected content, tool calls and model pricing.
+## Configuration
 
-## Architecture and agent behavior
+`.env.example` lists supported variables. Export them in your shell; `.env` files are not automatically loaded.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `LLM_PROVIDER` | `ollama` | `ollama` for the native local API, or `openai` for compatible hosted services |
+| `OLLAMA_MODEL` | `llama3.2:3b` | Installed model supporting function calls |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Local Ollama service |
+| `OPENAI_API_KEY` | unset | Required only with the hosted provider |
+| `OPENAI_MODEL` | `gpt-4.1-mini` | Hosted provider model identifier |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Hosted API root |
+
+To select a different installed Ollama model:
+
+```powershell
+$env:OLLAMA_MODEL = 'llama3.2:3b'
+```
+
+On macOS/Linux use `export OLLAMA_MODEL=llama3.2:3b`. The native Ollama request disables thinking, sets temperature to zero and requests a 32,768-token context. Use a machine with sufficient memory for the chosen model and context.
+
+For a hosted provider, set `LLM_PROVIDER=openai` and export the corresponding key, model and HTTPS endpoint. Never commit credentials. Local Ollama requests do not send a hosted API key.
+
+## Architecture
 
 ```text
-CLI validates URL and configuration
-          |
-Temporary bare clone, fixed HEAD commit, no checkout
-          |
-LLM observes -> reasons -> selects one tool
-          |                         ^
-Allowlisted dispatch -> bounded, redacted evidence
-          |
-LLM selects finish_audit -> evidence/schema validation
-          |                     |
-       accepted             correction feedback
-          |
-Atomic JSON report + optional redacted tool trace
+Public GitHub URL
+       |
+Validate URL -> temporary bare Git clone at a fixed commit
+       |
+LLM observes evidence and chooses a tool
+       |
+Allowlisted Python dispatcher executes a read-only inspection
+       |
+Redacted results return to the LLM -> follow-up investigation
+       |
+finish_audit -> schema and evidence validation
+       |                    |
+  accepted report       correction feedback to LLM
+       |
+Atomic JSON output + optional trace
 ```
 
-The LLM chooses the order and arguments of every inspection call. There is no fixed scanner whose results are simply summarized. The loop passes each tool result back to the model; unsupported final evidence produces corrective feedback and allows further investigation. A minimal completion gate requires structure discovery, a file read and history inspection; it does not prescribe an investigation sequence or predetermined findings.
-
-| File | Responsibility |
-| --- | --- |
-| `agent.py` | CLI, configuration, atomic report/trace writing and exit codes |
-| `tools.py` | `list_files`, `read_file`, `search_code`, `git_log` and dispatch |
-| `auditor/agent.py` | Explicit reasoning/tool loop and investigation policy |
-| `auditor/provider.py` | HTTPS API client, timeouts and bounded retries |
-| `auditor/repository.py` | Temporary bare clone and read-only Git object access |
-| `auditor/schema.py` | Tool schemas, report contract, evidence validation and deduplication |
-| `auditor/safety.py` | Repository URL validation and redaction |
-| `tests/` | Offline unit/integration tests with controlled fixtures and API failure simulation |
+The agent implements Observe → Reason → Select Tool → Execute Tool → Interpret Results → Report. Tool order and arguments are chosen dynamically by the LLM, not by a fixed checklist. Before finishing, it must have inspected the tree, read a file and examined commit history. Invalid line evidence is returned to the model for correction. Ollama replies without exactly one tool call receive protocol feedback within the same bounded loop.
 
 ## Inspection tools
 
-| Tool | Input and behavior |
+| Tool | Behavior |
 | --- | --- |
-| `list_files()` | Tracked paths, default 300 per page, maximum 500; follow `next_offset` |
-| `read_file(path)` | Redacted numbered UTF-8 source, default lines 1–160; max 200 lines and 16,000 characters per call; follow `next_line` |
-| `search_code(pattern)` | Case-insensitive literal search, optional glob; scans at most 200 files per page, returns at most 100 matches |
-| `git_log()` | Up to 50 recent commit subjects; default 20, no author emails |
+| `list_files()` | Discover tracked paths; paginated, up to 500 files per call |
+| `read_file(path)` | Read redacted source with one-based line numbers; up to 200 lines and 16,000 characters per call |
+| `search_code(pattern)` | Case-insensitive literal search with optional file glob; up to 200 files per page |
+| `git_log()` | Inspect up to 50 recent commit subjects from a shallow history |
 
-Search offsets refer to files. When the match limit is hit, read the last matching file for its remaining matches, then advance the returned offset by one. Files over 256 KB, binary files, non-UTF-8 files, symlinks and submodules are explicitly unavailable; absence of a search match does not establish absence in skipped files. Large tree metadata over 20 MB causes a fatal error. The clone includes at most 100 commits from the default branch.
+Tool output includes pagination and unavailable-file information. Search offsets count files, not matches. When the match limit is reached, inspect the last matching file directly, then advance the offset by one. Symlinks, submodules, binary files, non-UTF-8 text and files over 256 KB are not read as source. The clone contains at most 100 commits from the default branch.
 
-## Coverage and false-positive policy
+## DevOps coverage
 
-The model investigates repository hygiene, dependency management, code quality, tests, CI, security, configuration, collaboration, and build/release practices. It traces CI triggers, job conditions, permission scopes, checkouts, shell commands, referenced scripts and failure propagation.
+The investigation policy covers all nine assignment areas:
 
-An absent optional file is not automatically a violation. The model must consider equivalent controls such as external CI, tox/nox, setup.cfg, another package manager, or documented library packaging practices. Placeholder credentials and fixture examples should not be labeled real leaks. A redaction marker alone is not proof of a credential leak. No remote branch-protection claims, live credential validation, dependency vulnerability claims, or test-pass/fail claims are made without the necessary evidence. Test execution is intentionally unavailable because target code is untrusted.
-
-Each line-based finding must quote a nonempty exact excerpt from an observed redacted line. File-level findings require a discovered path; repository-level absence findings require complete file listing. This enforces provenance, but does not prove semantic correctness: an LLM can still misinterpret evidence. Findings sharing the same rule ID, path and line are deduplicated; the model is also asked to consolidate root causes.
-
-## Output contract
-
-The top-level object contains only `repository` and `violations`. Each finding contains exactly:
-
-| Field | Meaning |
+| Area | Examples investigated |
 | --- | --- |
-| `rule_id` | Stable descriptive identifier, e.g. `CI-IGNORED-FAILURE` |
-| `category` | `repository hygiene`, `dependency management`, `code quality`, `testing`, `ci`, `security`, `configuration`, `collaboration`, or `build and release` |
+| Repository hygiene | Relevant documentation gaps, tracked generated or local files |
+| Dependency management | Conflicting specifications, inappropriate constraints, install/lockfile inconsistencies |
+| Code quality | Quality controls and concrete maintainability problems |
+| Testing | Test discovery, documented test commands and CI execution |
+| CI | Trigger coverage, ignored failures, ineffective conditions and gates |
+| Security | Credentials, unsafe permissions, untrusted checkout/execution and shell injection |
+| Configuration | Developer-specific paths, committed local settings, environment separation |
+| Collaboration | Unsafe PR automation and relevant review guidance |
+| Build and release | Build validation and risky deployment/release paths |
+
+The model must investigate acceptable alternatives before reporting missing controls. An absent optional tool or file is not proof of a defect. Placeholder credentials and test fixtures require context. Remote branch protection cannot be inferred from source files. ML training, datasets and model validation are outside the scope.
+
+## JSON output contract
+
+Every completed report has exactly `repository` and `violations` at the top level. Each violation contains all of these fields:
+
+| Field | Contract |
+| --- | --- |
+| `rule_id` | Stable descriptive identifier |
+| `category` | One of the nine categories defined in `auditor/schema.py` |
 | `severity` | `critical`, `high`, `medium`, or `low` |
-| `file` | Tracked relative path, or JSON `null` when inapplicable |
-| `line` | Positive one-based line number, or JSON `null` when inapplicable |
-| `description` | Concrete defect and its impact |
-| `evidence` | Redacted source excerpt or supported structural evidence |
+| `file` | Relative tracked path, or JSON `null` when inapplicable |
+| `line` | Positive one-based integer, or JSON `null` when inapplicable |
+| `description` | Concrete defect and impact |
+| `evidence` | Observed redacted source excerpt or supported structural evidence |
 | `recommendation` | Actionable remediation |
 
-Severity reflects demonstrated impact: critical privileged compromise/exposure; high security or validation bypass; medium reliability gaps; low limited maintenance risk. A completed healthy audit uses `"violations": []`. Secret values must never be reproduced.
+Line-based evidence must exactly quote a nonempty substring of the observed line. File-level findings require discovered paths; repository-wide absence findings require a complete file listing. Duplicate rule/file/line findings are removed. A completed inspection may correctly produce an empty `violations` array.
 
-## Security boundaries and limitations
+Exit code 0 indicates a completed report. Fatal failures return 1 with a useful stderr message; invalid CLI syntax returns 2. A failed run never creates a fabricated completed report. Existing output files are preserved on failure, so check the exit code. Report writes are atomic. Optional traces contain the inspected commit, selected model, tool arguments/results and completion status.
 
-- Target repositories are never checked out, modified, imported, installed, built or executed. All inspection reads Git objects from a temporary bare clone that is removed afterward.
-- Only canonical public HTTPS GitHub repository URLs are accepted. Git credential prompts/helpers, user/system configuration, redirects and non-HTTPS protocols are disabled. Submodules and symlinks are not followed.
-- The model cannot invoke a shell or arbitrary tools. Repository content and commit text are explicitly treated as untrusted data; prompt injection can still affect model judgment, but cannot grant executable capabilities.
-- Common credential formats, sensitive assignments, private keys, URL passwords and known environment secrets are redacted before transmission. Heuristic redaction cannot guarantee recognition of every custom or encoded secret. Audit only public repositories you are comfortable sharing with your selected provider. Traces contain repository excerpts and must also be reviewed before publishing.
-- History is shallow. Remote settings, workflow runs and external service configurations are not inspected. Generated files and files outside the current default branch may be missed.
-- Time, response, file and context limits bound ordinary runs. Clone disk usage is not quota-enforced; for hostile or very large targets, run the auditor within a container/VM with CPU, memory, disk and network limits.
-- The agent fails explicitly on budget exhaustion, malformed provider responses or unavailable required services. It never fabricates a completed report as a fallback.
+## Safety and reliability
 
-## Automated validation
+Targets are never checked out, modified, imported, installed, built or executed. The tools read Git objects in a temporary bare clone that is cleaned up afterward. Git user/system configuration, credential prompts/helpers, redirects and non-HTTPS protocols are disabled. Paths must belong to the inspected commit; symlinks and submodules are not followed.
+
+The LLM cannot invoke a shell or arbitrary tool. Repository content and commit messages are untrusted data. Common credential formats, sensitive assignments, private keys, URL passwords and known environment secrets are redacted before entering model context or traces. Redaction is heuristic; review traces before publishing them. With local Ollama, inspection content stays on the configured local inference service.
+
+The agent does not run untrusted tests and therefore does not claim they passed or failed. It does not inspect remote branch settings, external CI services or vulnerability databases. Shallow history and bounded file inspection constrain coverage; LLM interpretation still requires judgment. These boundaries prevent invented results when a check is unavailable.
+
+Defaults: 60 model turns, configurable from 4 to 150; 600 seconds per local inference request or 60 seconds per hosted request; at most two retries for transient network errors; 120-second Git clone timeout and 30-second inspection-command timeout. Large tree metadata and accumulated context have explicit size limits. Clone disk usage is not quota-enforced; use OS/container resource limits for very large or hostile repositories.
+
+## Project structure
+
+```text
+agent.py                    Required CLI and atomic output handling
+tools.py                    Inspection tools and allowlisted dispatch
+auditor/agent.py            Explicit model/tool loop and investigation policy
+auditor/provider.py         Native Ollama and hosted API clients
+auditor/repository.py       Read-only Git object access and clone lifecycle
+auditor/schema.py           Tool contracts and report/evidence validation
+auditor/safety.py           URL validation and secret redaction
+tests/                      Offline unit and integration tests
+.github/workflows/ci.yml    Linux/Windows tests, lint and package builds
+.env.example                Configuration names without real credentials
+requirements.txt            Standard-library-only runtime declaration
+pyproject.toml              Packaging and lint configuration
+```
+
+## Tests and CI
 
 ```sh
 python -m unittest discover -s tests -v
@@ -145,55 +170,43 @@ python -m ruff check .
 python -m build
 ```
 
-Tests cover pagination, literal search, redaction, path/binary/symlink protection, size limits, genuine Git object reads, tool-loop feedback, evidence rejection and repair, malformed responses, budget exhaustion, deduplication, healthy-repository output, atomic writes and missing credentials. Tests use a scripted provider to remain offline and reproducible. They validate program behavior, not real-model detection precision or recall. The CI workflow runs tests, lint and package builds on Linux and Windows with Python 3.11 and 3.13, with read-only repository permissions and no API credentials.
+Automated tests cover dynamic follow-up, tool result interpretation, correction of unsupported evidence, healthy output, pagination, literal search, secret redaction, symlink/binary/path protections, real Git reads, schema compliance, deduplication, atomic output, bounded retries, API errors, native Ollama tool-call normalization and HTTP endpoint restrictions. Scripted provider responses in tests verify software behavior, not model accuracy.
 
-For a live evaluation, use separate public repositories containing (1) obvious seeded issues, (2) subtle CI/security issues, and (3) healthy alternative configurations. Create a manually verified answer set before running. Count unique correct findings and calculate precision = true positives / reported findings and recall = true positives / known defects; report undefined ratios as N/A. Do not claim hidden-evaluation scores or assume the offline tests establish these metrics.
+CI is configured for Ubuntu and Windows with Python 3.11 and 3.13, read-only GitHub permissions, pull-request and main-branch triggers, and pinned action revisions. API credentials are not needed for tests.
 
-## Authentic sample report
+## Sample audit and verification
 
-After setting credentials, run a real audit and preserve the tool trace:
+Generate an authentic sample with the local model:
 
 ```sh
-python agent.py --repo https://github.com/pallets/flask --output sample_report.json --trace sample_trace.json
+python agent.py --repo https://github.com/octocat/Hello-World --output sample_report.json --trace sample_trace.json
 ```
 
-Review the generated findings for unsupported claims and secrets before committing. Do not hand-edit output to invent better findings. If correction is needed, improve the agent, rerun, and retain the authentic output. `sample_trace.json` records repository commit, model, completion status and tool calls so the example is reproducible against the recorded snapshot. A future default-branch audit may differ. Until this run succeeds, the assignment's authentic-sample requirement remains outstanding.
+The sample trace records the exact target commit and actual tool sequence. A minimal demonstration repository can legitimately yield no findings; its absence of a production CI pipeline is not automatically a defect. Do not invent findings to make the example look more impressive.
+
+Local verification on October 25, 2026: 29 automated tests passed and Ruff passed. Source/wheel package builds were previously verified before the Ollama integration. Live Ollama sample status is recorded below after the run completes.
+
+For broader evaluation, use public repositories with independently documented obvious defects, subtle CI/security defects and healthy alternatives. Calculate precision as true positives divided by reported findings and recall as true positives divided by known defects. Treat undefined ratios as N/A. No hidden-test scores or unmeasured accuracy claims are made.
 
 ## Troubleshooting
 
-| Error | Resolution |
-| --- | --- |
-| Missing API key | Export `OPENAI_API_KEY` in the current shell; `.env` is not auto-loaded |
-| HTTP 401/403 | Verify provider credentials and model access |
-| HTTP 429 | Check quota/rate limits, wait and rerun |
-| Invalid provider response | Choose a model/endpoint supporting Chat Completions function tools |
-| Git operation failed | Verify the URL is public, Git is installed and HTTPS access works |
-| Budget/context exhausted | Increase `--max-steps` within limits or investigate a smaller repository; no completed report is fabricated |
-| File skipped | Use another source of evidence; the agent must not infer the skipped file's contents |
+- Connection refused: start the Ollama desktop app or `ollama serve`; verify `ollama list` works.
+- Model missing: run `ollama pull llama3.2:3b` or select an installed tool-capable model.
+- Slow local run: allow CPU inference time, close memory-heavy applications, or choose a suitable model for your hardware.
+- Tool budget exhausted: inspect the incomplete trace; choose a stronger tool-capable model or increase the budget.
+- Git operation failed: verify public repository access, Git installation and network access.
+- Hosted authentication failure: configure the hosted key/model only when `LLM_PROVIDER=openai`.
 
-## Publication and submission
+## Assignment submission
 
-Once tests and the authentic sample pass, create a public GitHub repository and push this project's files. With GitHub CLI installed and authenticated:
+Submit **only this public GitHub repository URL** through the course submission channel. All setup, architecture, execution and related project information belongs in this README. Required deliverables are `agent.py`, `tools.py`, agent modules, dependencies/configuration, tests and authentic `sample_report.json`. The public repository and successful live sample must be present before submission.
 
-```sh
-git init -b main
-git add .
-git commit -m "Implement LLM-directed DevOps repository auditing agent"
-gh repo create devops-repository-auditing-agent --public --source . --remote origin --push
-```
+## Contribution and review
 
-Confirm the repository is publicly accessible, CI passes, and `agent.py`, `tools.py`, `auditor/`, `requirements.txt`, `.env.example`, `README.md`, `tests/` and the authentic `sample_report.json` are present. Keep all setup and explanatory material in this README. Submit **only the public GitHub repository URL** through the course submission channel. Do not submit a ZIP, screenshots, or a handwritten report.
-
-## Portfolio presentation
-
-Demonstrate a live run, show a follow-up tool call in the trace, explain a verified finding and a rejected false positive, and discuss the safety and evidence boundaries. A truthful CV description after completing the live validation is: “Built a Python LLM-directed DevOps auditing agent with read-only Git inspection, evidence-grounded JSON reports, bounded tool execution, and automated cross-platform validation.” Add measured accuracy or performance only after running and documenting an actual evaluation.
+Use focused commits and pull requests explaining the change and validation. Review evidence grounding, safe tool boundaries, prompt-injection handling and redaction carefully. Add regression tests for new behavior and preserve the required CLI/JSON contract. Never commit real credentials.
 
 ## References
 
-- [OpenAI Chat Completions function-tool API](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
-- [Git cat-file documentation](https://git-scm.com/docs/git-cat-file)
-- [Git ls-tree documentation](https://git-scm.com/docs/git-ls-tree)
-
-## Review guidance
-
-For changes, open a pull request explaining the defect, resulting behavior and validation. Review tool allowlists, untrusted-input boundaries, redaction, evidence grounding and failure handling. Add regression tests for new behaviors, never add real secrets to fixtures, and preserve the required CLI and JSON contract.
+- [Ollama API documentation](https://docs.ollama.com/api)
+- [Git cat-file](https://git-scm.com/docs/git-cat-file)
+- [Git ls-tree](https://git-scm.com/docs/git-ls-tree)
