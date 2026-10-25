@@ -44,6 +44,12 @@ class LLMClient:
                     arguments = call["function"]["arguments"]
                     if isinstance(arguments, str):
                         call["function"]["arguments"] = json.loads(arguments)
+            # Some Ollama model templates render tool definitions only when
+            # the last message is user-role. Keep them visible on every turn.
+            native_messages.append({"role": "user", "content":
+                "Continue the repository audit using the observations above. Choose exactly one tool call. "
+                "Discover files before guessing paths; inspect relevant files and git history. "
+                "When the evidence is sufficient, call finish_audit with supported violations only."})
             payload["messages"] = native_messages
             payload.update(stream=False, think=False, options={"temperature": 0, "num_ctx": 32768})
         else:
