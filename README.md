@@ -143,8 +143,6 @@ Targets are never checked out, modified, imported, installed, built or executed.
 
 The LLM cannot invoke a shell or arbitrary tool. Repository content and commit messages are untrusted data. Common credential formats, sensitive assignments, private keys, URL passwords and known environment secrets are redacted before entering model context or traces. Redaction is heuristic; review traces before publishing them. With local Ollama, inspection content stays on the configured local inference service.
 
-The agent does not run untrusted tests and therefore does not claim they passed or failed. It does not inspect remote branch settings, external CI services or vulnerability databases. Shallow history and bounded file inspection constrain coverage; LLM interpretation still requires judgment. These boundaries prevent invented results when a check is unavailable.
-
 Defaults: 60 model turns, configurable from 4 to 150; 600 seconds per local inference request or 60 seconds per hosted request; at most two retries for transient network errors; 120-second Git clone timeout and 30-second inspection-command timeout. Large tree metadata and accumulated context have explicit size limits. Clone disk usage is not quota-enforced; use OS/container resource limits for very large or hostile repositories.
 
 ## Project structure
